@@ -1,0 +1,15 @@
+{
+  "name": "energy-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Энергомонитор — система мониторинга энергопотребления с парсингом .docx в браузере",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "npm run build && python3 -m http.server --directory dist 5173",
+    "preview": "python3 -m http.server --directory dist 5173"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
