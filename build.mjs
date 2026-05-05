@@ -29,7 +29,13 @@ async function copyTree(srcDir, outDir) {
 
 async function main() {
   console.log("→ Cleaning dist/");
-  await rm(OUT, { recursive: true, force: true });
+  try {
+    await rm(OUT, { recursive: true, force: true });
+  } catch (e) {
+    // EPERM/EBUSY on some filesystems — fall back to overwriting in place
+    if (!["EPERM", "EBUSY", "EACCES"].includes(e.code)) throw e;
+    console.log("   (couldn't remove dist/ — will overwrite contents)");
+  }
   await mkdir(OUT, { recursive: true });
 
   console.log("→ Bundling src/app.jsx (esbuild, minified)");
@@ -68,14 +74,43 @@ async function main() {
   html = html.replaceAll("__BUILD__", hash);
   await writeFile(join(OUT, "index.html"), html, "utf8");
 
+  console.log("→ Building standalone.html (inlined CSS+JS, opens via file://)");
+  // Standalone: inline CSS and JS into one self-contained HTML.
+  // Templates won't be loadable via file:// (browser blocks fetch from file://),
+  // so we hide the sample-download buttons in standalone mode by toggling a class.
+  const cssText = cssBuf.toString("utf8");
+  const jsText  = appBuf.toString("utf8");
+  const standalone = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Energy Monitor · standalone</title>
+  <style>${cssText}
+.standalone .upload-btn.secondary { display: none; }
+</style>
+</head>
+<body class="standalone">
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js" crossorigin></script>
+  <script>${jsText}</script>
+</body>
+</html>
+`;
+  await writeFile(join(OUT, "standalone.html"), standalone, "utf8");
+  // Also drop a copy at the project root for easy double-click access
+  try { await writeFile(join(ROOT, "open-me.html"), standalone, "utf8"); } catch {}
+
   console.log("→ Sizes:");
-  for (const name of ["app.js", "styles.css", "index.html"]) {
+  for (const name of ["app.js", "styles.css", "index.html", "standalone.html"]) {
     const p = join(OUT, name);
     const s = await stat(p);
-    console.log(`   ${name.padEnd(12)} ${(s.size / 1024).toFixed(1).padStart(7)} KB`);
+    console.log(`   ${name.padEnd(16)} ${(s.size / 1024).toFixed(1).padStart(7)} KB`);
   }
   console.log(`✓ Build hash: ${hash}`);
-  console.log("✓ Output: dist/");
+  console.log("✓ Output: dist/  (and open-me.html at project root)");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
